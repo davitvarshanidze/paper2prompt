@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper 2 Prompt</title>
+    <script type="module">
+        import pdfjsDist from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/+esm' 
+    </script>
+</head>
+<style>
+    main {
+        margin: 0 auto;
+        width: 100%;
+        max-width: 800px;
+        padding: 10px;
+    }
+
+    textarea {
+        width: 100%;
+    }
+</style>
+<script>
+
+    function reset() {
+        document.getElementById("arxiv_link").value = "";
+        document.getElementById("file").value = null;
+        document.getElementById("result").value = "";
+        document.getElementById("before").innerText = "";
+        document.getElementById("after").innerText = "";
+        document.getElementById("compression").innerText = "";
+    }
+
+    window.onload = function () {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs'
+        reset();
+    }
+
+    var text = "";
+    var stopAtAcknowledgements = true;
+
+    function minify(text) {
+
+        if (stopAtAcknowledgements) {
+            loc = text.search(/Acknowledgements/i);
+            if (loc != -1) {
+                text = text.substring(0, loc);
+            }
+        }
+
+        text = text.replace(/(\r\n|\n|\r)/gm, " ");
+
+        text = text.replace(/A /g, " ");
+        text = text.replace(/ a /g, " ");
+        text = text.replace(/An /g, " ");
+        text = text.replace(/ an /g, " ");
+        text = text.replace(/The /g, " ");
+        text = text.replace(/ the /g, " ");
+        text = text.replace(/We /g, " ");
+        text = text.replace(/ we /g, " ");
+        text = text.replace(/- /g, "-");
+        text = text.replace(/ also /g, " ");
+        text = text.replace(/Also /g, " ");
+        text = text.replace(/In this work/g, " ");
+        text = text.replace(/is given as/g, " as ");
+        text = text.replace(/in terms of/g, " as ");
+        text = text.replace(/One as /g, " ");
+        text = text.replace(/ allows one /g, " ");
+        text = text.replace(/ promising /g, " ");
+        text = text.replace(/ important /g, " ");
+
+        text = text.replace(/  +/g, ' ');
+        text = text.trim();
+
+        text = text.replace(/\. /g, ".");
+        text = text.replace(/,/g, "");
+
+        return text;
+
+    }
+
+    function getPrompt() {
+
+        var arxiv_link = document.getElementById("arxiv_link").value;
+        arxiv_link = arxiv_link.replace("abs", "pdf");
+        var file_input = document.getElementById("file").files[0];
+        pdfLoc = arxiv_link;
+        if (arxiv_link == "" && file_input == null) {
+            return false;
+        } else if (arxiv_link == "" && file_input != null) {
+            pdfLoc = URL.createObjectURL(file_input);
+        }
+
+        stopAtAcknowledgements = document.getElementById("acknowledgements").checked;
+
+        const loadingTask = pdfjsLib.getDocument({ url: pdfLoc });
+        loadingTask.promise.then(function (pdf) {
+
+            var maxPages = pdf.numPages;
+            var countPromises = [];
+            for (var j = 1; j <= maxPages; j++) {
+                var page = pdf.getPage(j);
+                countPromises.push(page);
+            }
+
+            Promise.all(countPromises).then(function (pages) {
+                var pagePromises = [];
+                for (var i = 0; i < maxPages; i++) {
+                    var textContent = pages[i].getTextContent();
+                    pagePromises.push(textContent);
+                }
+                Promise.all(pagePromises).then(function (texts) {
+                    var fullText = "";
+                    for (var k = 0; k < maxPages; k++) {
+                        for (var l = 0; l < texts[k].items.length; l++) {
+                            fullText += texts[k].items[l].str + " ";
+                        }
+                    }
+
+                    beforeCount = fullText.length;
+                    text = minify(fullText);
+                    afterCount = text.length;
+                    compression = Math.round((1 - (afterCount / beforeCount)) * 100);
+
+                    document.getElementById("result").value = "Summarize this paper:" + text;
+                    document.getElementById("before").innerText = beforeCount + " characters";
+                    document.getElementById("after").innerText = afterCount + " characters";
+                    document.getElementById("compression").innerText = compression + "%";
+
+                });
+            });
+
+        }, function (reason) {
+            console.error(reason);
+        });
+
+    }
+
+</script>
+
+<body>
+    <main>
+        <h2>Paper 2 Prompt</h2>
+        <p>Link paper or PDF file to turn it into a prompt suitable for an LLM</p>
+        <hr>
+        <br>
+        <form method="post">
+            <label for="arxiv_link">arXiv link:</label>
+            <input type="text" id="arxiv_link" name="arxiv_link" required>
+            <label for="file">or PDF:</label>
+            <input type="file" id="file" name="file" accept=".pdf">
+            <br>
+            <br>
+            <label for="acknowledgements">Stop at acknowledgements</label>
+            <input type="checkbox" id="acknowledgements" name="acknowledgements" value="acknowledgements" checked>
+            <br>
+            <br>
+            <input type="button" value="Submit" onclick="getPrompt()">
+            <input type="button" value="Reset" onclick="reset()">
+        </form>
+        <br>
+        <hr>
+        <p>Result:</p>
+        <textarea id="result" rows="10"></textarea>
+        <p>Size before: <span id="before"></span></p>
+        <p>Size after: <span id="after"></span></p>
+        <p>Reduction: <span id="compression"></span></p>
+    </main>
+</body>
+
+</html>
